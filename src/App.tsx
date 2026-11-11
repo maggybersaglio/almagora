@@ -8,6 +8,7 @@ import {
   BluetoothDeviceState,
   VoicePersonaId,
 } from './types/tour';
+import { getRecordedAudio, withRecordedText } from './data/recordedAudio';
 import { fetchMonumentNarration, createDefaultNarration, syncUserProfile, fetchSyncedProfile } from './services/ciceroneApi';
 import { speechService } from './services/speechService';
 import { bluetoothService } from './services/bluetoothService';
@@ -316,9 +317,10 @@ export default function App() {
       (activeWaypoint ? createDefaultNarration(activeWaypoint, activeTour.city) : null);
     if (!narration) return;
 
-    speechService.playNarration(narration.spokenNarration, {
+    speechService.playNarration(getRecordedAudio(activeWaypoint?.id)?.narrationText || narration.spokenNarration, {
       speed: playbackSpeed,
       voicePersonaId: activeVoicePersona,
+      audioUrl: getRecordedAudio(activeWaypoint?.id)?.narration,
       onStart: () => setIsPlaying(true),
       onEnd: () => setIsPlaying(false),
     });
@@ -343,9 +345,10 @@ export default function App() {
     } else {
       // User clicked while stopped: start single instance immediately in 0ms
       setIsPlaying(true);
-      speechService.playNarration(narration.spokenNarration, {
+      speechService.playNarration(getRecordedAudio(activeWaypoint?.id)?.narrationText || narration.spokenNarration, {
         speed: playbackSpeed,
         voicePersonaId: activeVoicePersona,
+        audioUrl: getRecordedAudio(activeWaypoint?.id)?.narration,
         onStart: () => setIsPlaying(true),
         onEnd: () => setIsPlaying(false),
       });
@@ -906,7 +909,7 @@ export default function App() {
       {/* Persistent Audio Player Dock */}
       <AudioPlayerDock
         waypoint={activeWaypoint}
-        narration={activeNarration}
+        narration={activeNarration && activeWaypoint ? withRecordedText(activeWaypoint.id, activeNarration) : activeNarration}
         isPlaying={isPlaying}
         onTogglePlay={handleTogglePlay}
         onSkipBack15={handleSkipBack15}
@@ -943,6 +946,7 @@ export default function App() {
         voicePersona={activeVoicePersona}
         bluetoothState={bluetoothState}
         suggestedQuestions={activeNarration?.suggestedQuestions}
+        userLocation={userLocation}
       />
 
       {/* Bluetooth Earphones Modal */}

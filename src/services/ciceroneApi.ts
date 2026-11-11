@@ -1,5 +1,4 @@
 import { MonumentNarration, Tour, UserProfile, VoicePersonaId } from '../types/tour';
-import { generateSmartMonumentAnswer } from '../data/monumentKnowledge';
 
 export function createDefaultNarration(
   monument: { name: string; teaser?: string },
@@ -57,28 +56,32 @@ export async function fetchMonumentNarration(params: {
   }
 }
 
+export class CiceroneAiError extends Error {}
+
 export async function askCiceroneQuestion(params: {
   question: string;
   currentMonument?: string;
   city?: string;
   voicePersona?: VoicePersonaId;
   language?: string;
+  conversationHistory?: { sender: 'user' | 'cicerone'; text: string }[];
+  userLocation?: { lat: number; lng: number } | null;
 }): Promise<{ answer: string; timestamp: string }> {
+  let res: Response;
   try {
-    const res = await fetch('/api/cicerone/ask', {
+    res = await fetch('/api/cicerone/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
-    if (!res.ok) throw new Error('Failed to answer voice query');
-    return await res.json();
-  } catch (err) {
-    console.warn('Fallback voice response using smart monument knowledge:', err);
-    return {
-      answer: generateSmartMonumentAnswer(params),
-      timestamp: new Date().toISOString(),
-    };
+  } catch {
+    throw new CiceroneAiError('Server non raggiungibile. Controlla la connessione e riprova.');
   }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.answer) {
+    throw new CiceroneAiError(data.message || 'Non sono riuscito a ottenere una risposta dall’AI. Riprova.');
+  }
+  return data;
 }
 
 export async function transcribeAudioBlob(blob: Blob): Promise<string> {

@@ -13,7 +13,7 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { askCiceroneQuestion, transcribeAudioBlob } from '../services/ciceroneApi';
+import { askCiceroneQuestion, transcribeAudioBlob, CiceroneAiError } from '../services/ciceroneApi';
 import { speechService } from '../services/speechService';
 import { BluetoothDeviceState, VoicePersonaId } from '../types/tour';
 
@@ -22,6 +22,7 @@ interface Message {
   sender: 'user' | 'cicerone';
   text: string;
   timestamp: string;
+  isError?: boolean;
 }
 
 interface VoiceAssistantModalProps {
@@ -32,6 +33,7 @@ interface VoiceAssistantModalProps {
   voicePersona: VoicePersonaId;
   bluetoothState: BluetoothDeviceState;
   suggestedQuestions?: string[];
+  userLocation?: { lat: number; lng: number } | null;
 }
 
 const STORAGE_KEY = 'almagora_cicerone_chat_messages';
@@ -44,6 +46,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   voicePersona,
   bluetoothState,
   suggestedQuestions = [],
+  userLocation = null,
 }) => {
   // 1. Persistent chat history (survives closes, tab switches, and audio events)
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -136,6 +139,11 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
+    // Conversation so far (errors and the static greeting are not part of the real dialogue)
+    const history = messages
+      .filter((m) => !m.isError && !m.id.startsWith('init'))
+      .map((m) => ({ sender: m.sender, text: m.text }));
+
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
 
@@ -145,6 +153,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         currentMonument: currentMonumentName,
         city,
         voicePersona,
+        conversationHistory: history,
+        userLocation,
       });
 
       const botMsgId = `c-${Date.now()}`;
@@ -166,6 +176,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       });
     } catch (err) {
       console.error('Error in askCiceroneQuestion:', err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `e-${Date.now()}`,
+          sender: 'cicerone',
+          isError: true,
+          text:
+            err instanceof CiceroneAiError
+              ? err.message
+              : 'Si è verificato un errore imprevisto. Riprova.',
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -498,13 +521,15 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                   className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs sm:text-sm leading-relaxed ${
                     msg.sender === 'user'
                       ? 'bg-[#1e5e7f] text-white font-medium rounded-br-none shadow-md'
+                      : msg.isError
+                      ? 'bg-red-950/50 border border-red-800/50 text-red-200 rounded-bl-none'
                       : 'bg-[#121c27] border border-[#1e5e7f]/30 text-stone-200 rounded-bl-none shadow-sm space-y-2'
                   }`}
                 >
                   <div>{msg.text}</div>
 
                   {/* Audio Controls Badge on AI answers */}
-                  {msg.sender === 'cicerone' && (
+                  {msg.sender === 'cicerone' && !msg.isError && (
                     <div className="pt-1.5 border-t border-stone-800 flex items-center justify-between gap-2">
                       <button
                         type="button"

@@ -111,9 +111,12 @@ class SpeechService {
       onEnd?: () => void;
       onStart?: () => void;
       forceRestart?: boolean;
+      /** Se presente, riproduce questa registrazione invece della voce sintetica */
+      audioUrl?: string;
     } = {}
   ): boolean {
     if (!text || !text.trim()) return false;
+    if (options.audioUrl) return this.playRecording(text.trim(), options.audioUrl, options);
     const cleanText = text.trim();
 
     // 1. Invalidate any in-flight playback sessions so old callbacks never execute
@@ -228,6 +231,71 @@ class SpeechService {
   }
 
   /**
+   * Plays a real recorded voice file. If the file cannot be played,
+   * falls back to speech synthesis of the same text.
+   */
+  private playRecording(
+    text: string,
+    url: string,
+    options: { speed?: number; voicePersonaId?: string; onEnd?: () => void; onStart?: () => void }
+  ): boolean {
+    const sessionId = ++this.currentPlaySession;
+    this.stopPlaybackInternal();
+
+    const speed = options.speed || this.currentSpeed || 1.0;
+    this.currentSpeed = speed;
+    this.currentFullText = text;
+    this.isSpeakingInternal = true;
+    this.isPausedInternal = false;
+    this.elapsedSeconds = 0;
+
+    const audio = new Audio(url);
+    audio.playbackRate = speed;
+    if (this.activeSinkId && 'setSinkId' in audio) {
+      try {
+        (audio as any).setSinkId(this.activeSinkId);
+      } catch {}
+    }
+    this.currentAudio = audio;
+
+    const fallbackToSynthesis = () => {
+      if (this.currentPlaySession !== sessionId) return;
+      console.warn('Recorded audio unavailable, using speech synthesis:', url);
+      this.currentAudio = null;
+      this.playNarration(text, { ...options });
+    };
+
+    audio.onloadedmetadata = () => {
+      if (this.currentPlaySession !== sessionId) return;
+      this.estimatedDuration = Math.max(1, audio.duration / speed);
+    };
+    audio.ontimeupdate = () => {
+      if (this.currentPlaySession !== sessionId) return;
+      this.elapsedSeconds = audio.currentTime;
+      this.onPlaybackProgress?.(audio.currentTime, audio.duration || this.estimatedDuration);
+    };
+    audio.onended = () => {
+      if (this.currentPlaySession !== sessionId) return;
+      this.isSpeakingInternal = false;
+      this.currentAudio = null;
+      options.onEnd?.();
+      this.onPlaybackEnd?.();
+      this.onStateChange?.(false);
+    };
+    audio.onerror = fallbackToSynthesis;
+
+    audio
+      .play()
+      .then(() => {
+        if (this.currentPlaySession !== sessionId) return;
+        options.onStart?.();
+        this.onStateChange?.(true);
+      })
+      .catch(fallbackToSynthesis);
+    return true;
+  }
+
+  /**
    * Toggle Play / Stop cleanly:
    * - If already playing: INTERRUPTS immediately (stops all audio, zero residual sound)
    * - If stopped: starts audio once immediately with 0ms latency
@@ -313,6 +381,11 @@ class SpeechService {
   }
 
   public skipSeconds(delta: number) {
+    if (this.currentAudio) {
+      const dur = this.currentAudio.duration || this.estimatedDuration;
+      this.currentAudio.currentTime = Math.max(0, Math.min(dur, this.currentAudio.currentTime + delta));
+      return;
+    }
     const newTime = Math.max(0, Math.min(this.estimatedDuration, this.elapsedSeconds + delta));
     this.elapsedSeconds = newTime;
     if (this.onPlaybackProgress) {
