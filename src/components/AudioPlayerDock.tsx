@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MonumentNarration, Waypoint, VoicePersona, VoicePersonaId } from '../types/tour';
 import { VOICE_PERSONAS } from '../data/mockTours';
+import { getRecordedAudio } from '../data/recordedAudio';
 import {
   Play,
   Pause,
@@ -23,6 +24,7 @@ interface AudioPlayerDockProps {
   narration: MonumentNarration | null;
   isPlaying: boolean;
   onTogglePlay: () => void;
+  onPlayClip?: (audioUrl: string, text: string) => void;
   onSkipBack15: () => void;
   onSkipForward15: () => void;
   onNextWaypoint?: () => void;
@@ -37,11 +39,24 @@ interface AudioPlayerDockProps {
   onToggleSaveFavorite: () => void;
 }
 
+const ClipButton: React.FC<{ onClick: () => void }> = ({ onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="ml-auto flex items-center gap-1 rounded-full bg-[#1e5e7f]/40 border border-[#1e5e7f]/60 px-2.5 py-1 text-[10px] font-bold text-[#cfeaf7] normal-case tracking-normal hover:bg-[#1e5e7f]/70 transition-colors"
+    aria-label="Ascolta"
+  >
+    <Volume2 className="w-3 h-3" />
+    Ascolta
+  </button>
+);
+
 export const AudioPlayerDock: React.FC<AudioPlayerDockProps> = ({
   waypoint,
   narration,
   isPlaying,
   onTogglePlay,
+  onPlayClip,
   onSkipBack15,
   onSkipForward15,
   onNextWaypoint,
@@ -56,6 +71,7 @@ export const AudioPlayerDock: React.FC<AudioPlayerDockProps> = ({
   onToggleSaveFavorite,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const recorded = getRecordedAudio(waypoint?.id);
   const [selectedQuizOption, setSelectedQuizOption] = useState<number | null>(null);
   const [showQuizResult, setShowQuizResult] = useState(false);
 
@@ -364,6 +380,9 @@ export const AudioPlayerDock: React.FC<AudioPlayerDockProps> = ({
                 <div className="flex items-center gap-2 text-[#79c3e6] text-xs font-bold uppercase tracking-wider">
                   <Sparkles className="w-4 h-4" />
                   <span>Dettaglio Nascosto da Cercare con gli Occhi</span>
+                  {recorded?.secret && onPlayClip && (
+                    <ClipButton onClick={() => onPlayClip(recorded.secret!, narration.secretDetails)} />
+                  )}
                 </div>
                 <p className="text-sm text-stone-200 leading-relaxed">
                   {narration.secretDetails}
@@ -399,6 +418,9 @@ export const AudioPlayerDock: React.FC<AudioPlayerDockProps> = ({
                 <div className="flex items-center gap-2 text-xs font-bold text-[#79c3e6] uppercase tracking-wider">
                   <Compass className="w-4 h-4" />
                   <span>Consiglio da Insider Locale</span>
+                  {recorded?.insiderTip && onPlayClip && (
+                    <ClipButton onClick={() => onPlayClip(recorded.insiderTip!, narration.insiderTip)} />
+                  )}
                 </div>
                 <p className="text-xs text-stone-300 leading-relaxed">
                   {narration.insiderTip}

@@ -405,6 +405,9 @@ class SpeechService {
     if (this.currentUtterance) {
       this.currentUtterance.rate = speed;
     }
+    if (this.currentAudio) {
+      this.currentAudio.playbackRate = speed;
+    }
   }
 
   private startProgressTimer() {

@@ -8,7 +8,7 @@ import {
   BluetoothDeviceState,
   VoicePersonaId,
 } from './types/tour';
-import { getRecordedAudio, withRecordedText } from './data/recordedAudio';
+import { getRecordedAudio, getRecordedIntro, withRecordedText } from './data/recordedAudio';
 import { fetchMonumentNarration, createDefaultNarration, syncUserProfile, fetchSyncedProfile } from './services/ciceroneApi';
 import { speechService } from './services/speechService';
 import { bluetoothService } from './services/bluetoothService';
@@ -311,20 +311,57 @@ export default function App() {
     });
   };
 
+  // Tours whose recorded city welcome has already been played this session
+  const introPlayedRef = useRef<Set<string>>(new Set());
+
+  // Plays the stop's narration; on the tour's first stop the recorded city intro goes first (once).
+  const startNarration = (narration: MonumentNarration) => {
+    const recorded = getRecordedAudio(activeWaypoint?.id);
+    const playMain = () =>
+      speechService.playNarration(recorded?.narrationText || narration.spokenNarration, {
+        speed: playbackSpeed,
+        voicePersonaId: activeVoicePersona,
+        audioUrl: recorded?.narration,
+        onStart: () => setIsPlaying(true),
+        onEnd: () => setIsPlaying(false),
+      });
+
+    const intro = getRecordedIntro(activeTour.city);
+    const isFirstStop = activeTour.waypoints[0]?.id === activeWaypoint?.id;
+    if (intro && isFirstStop && !introPlayedRef.current.has(activeTour.id)) {
+      introPlayedRef.current.add(activeTour.id);
+      speechService.playNarration(intro.text, {
+        speed: playbackSpeed,
+        voicePersonaId: activeVoicePersona,
+        audioUrl: intro.audio,
+        onStart: () => setIsPlaying(true),
+        onEnd: playMain,
+      });
+    } else {
+      playMain();
+    }
+    setIsPlaying(true);
+  };
+
+  // Plays one of the stop's extra recorded clips (hidden detail, insider tip)
+  const handlePlayClip = (audioUrl: string, text: string) => {
+    setIsPlaying(true);
+    speechService.playNarration(text, {
+      speed: playbackSpeed,
+      voicePersonaId: activeVoicePersona,
+      audioUrl,
+      onStart: () => setIsPlaying(true),
+      onEnd: () => setIsPlaying(false),
+    });
+  };
+
   const handlePlayAudio = () => {
     const narration =
       activeNarration ||
       (activeWaypoint ? createDefaultNarration(activeWaypoint, activeTour.city) : null);
     if (!narration) return;
 
-    speechService.playNarration(getRecordedAudio(activeWaypoint?.id)?.narrationText || narration.spokenNarration, {
-      speed: playbackSpeed,
-      voicePersonaId: activeVoicePersona,
-      audioUrl: getRecordedAudio(activeWaypoint?.id)?.narration,
-      onStart: () => setIsPlaying(true),
-      onEnd: () => setIsPlaying(false),
-    });
-    setIsPlaying(true);
+    startNarration(narration);
   };
 
   const handlePauseAudio = () => {
@@ -344,14 +381,7 @@ export default function App() {
       setIsPlaying(false);
     } else {
       // User clicked while stopped: start single instance immediately in 0ms
-      setIsPlaying(true);
-      speechService.playNarration(getRecordedAudio(activeWaypoint?.id)?.narrationText || narration.spokenNarration, {
-        speed: playbackSpeed,
-        voicePersonaId: activeVoicePersona,
-        audioUrl: getRecordedAudio(activeWaypoint?.id)?.narration,
-        onStart: () => setIsPlaying(true),
-        onEnd: () => setIsPlaying(false),
-      });
+      startNarration(narration);
     }
   };
 
@@ -912,6 +942,7 @@ export default function App() {
         narration={activeNarration && activeWaypoint ? withRecordedText(activeWaypoint.id, activeNarration) : activeNarration}
         isPlaying={isPlaying}
         onTogglePlay={handleTogglePlay}
+        onPlayClip={handlePlayClip}
         onSkipBack15={handleSkipBack15}
         onSkipForward15={handleSkipForward15}
         onNextWaypoint={handleNextWaypoint}
